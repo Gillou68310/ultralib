@@ -437,6 +437,7 @@ OSViMode osViModeTable[] = {
             BURST(4, 2, 14, 0), // vBurst
             VINTR(2),           // vIntr
         } } },
+#if BUILD_VERSION > VERSION_E
     { OS_VI_PAL_LPN1, // type
       {
           // comRegs
@@ -871,6 +872,8 @@ OSViMode osViModeTable[] = {
             BURST(105, 2, 13, 0), // vBurst
             VINTR(2),             // vIntr
         } } },
+#endif
+#if BUILD_VERSION >= VERSION_E
     { OS_VI_MPAL_LPN1, // type
       {
           // comRegs
@@ -1740,5 +1743,6 @@ OSViMode osViModeTable[] = {
             BURST(105, 2, 13, 0), // vBurst
             VINTR(2),             // vIntr
         } } },
+#endif
 #endif
 };

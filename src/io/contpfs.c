@@ -213,7 +213,11 @@ s32 __osGetId(OSPfs* pfs) {
     bcopy(id, pfs->id, BLOCKSIZE);
 #else
     for (k = 0; k < ARRLEN(pfs->id); k++) {
+#if BUILD_VERSION == VERSION_E
+        pfs->id[k] = *(u8 *)((u32)id + k);
+#else
         pfs->id[k] = ((u8 *)id)[k];
+#endif
     }
 #endif
     pfs->version = id->version;

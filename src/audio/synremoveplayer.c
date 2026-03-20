@@ -38,7 +38,11 @@ void alSynRemovePlayer(ALSynth *drvr, ALPlayer *client)
 		    drvr->head = thing->next;
 
                 client->next = 0;
-		break;
+#if BUILD_VERSION == VERSION_E
+		return;
+#else
+        break;
+#endif
             }
 	    prev = thing;
         }

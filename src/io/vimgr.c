@@ -60,7 +60,9 @@ void osCreateViManager(OSPri pri) {
     __osViDevMgr.evtQueue = &viEventQueue;
     __osViDevMgr.acsQueue = NULL;
     __osViDevMgr.dma = NULL;
+#if BUILD_VERSION != VERSION_E
     __osViDevMgr.edma = NULL;
+#endif
     osCreateThread(&viThread, 0, viMgrMain, &__osViDevMgr, STACK_START(viThreadStack), pri);
     __osViInit();
     osStartThread(&viThread);

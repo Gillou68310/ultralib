@@ -92,6 +92,13 @@ EXPORT(__osHwIntTable)
     .word 0
 #endif
 
+#if BUILD_VERSION == VERSION_E
+__os_Kdebug_Pkt:
+    .word 0
+
+__osRdb_Mesg:
+    .word 0
+#endif
 #ifndef _FINALROM
 __osRdb_DbgRead_Ct:
     .word 0
@@ -399,7 +406,28 @@ rdbout:
 skip_kmc_mode:
 #endif
 
+#if BUILD_VERSION == VERSION_E
+    andi    t1, t0, 0x7c
+    li      t2, 0
+    bne     t1, t2, savecontext
+    and     t1, k1, t0
+    andi    t2, t1, CAUSE_IP7
+    beqz    t2, notIP7
+    li      t1, 1
+    sw      t1, __os_Kdebug_Pkt
+    b       bobo
+notIP7:
+    andi    t2, t1, CAUSE_IP6
+    beqz    t2, savecontext
+    li      t1, 1
+    sw      t1, __osRdb_Mesg
+    b       bobo
 savecontext:
+    sw      zero, __os_Kdebug_Pkt
+    sw      zero, __osRdb_Mesg
+#else
+savecontext:
+#endif
     /* Save the context of the previously running thread to be restored when it resumes */
     move    t0, k0
     lw      k0, __osRunningThread
@@ -416,7 +444,11 @@ savecontext:
     sd      t1, THREAD_GP9(k0)
     ld      t1, THREAD_GP10(t0)
     sd      t1, THREAD_GP10(k0)
+#if BUILD_VERSION == VERSION_E
+bobo:
+#else
 3:
+#endif
     sd      $2, THREAD_GP2(k0)
     sd      $3, THREAD_GP3(k0)
     sd      $4, THREAD_GP4(k0)
@@ -448,6 +480,7 @@ savecontext:
     mfhi    t0
     sd      t0, THREAD_HI(k0)
 
+#if BUILD_VERSION != VERSION_E
     lw      k1, THREAD_SR(k0)
     andi    t1, k1, SR_IMASK
     beqz    t1, savercp
@@ -491,6 +524,7 @@ savercp:
     or      t1, t1, t0
 endrcp:
     sw      t1, THREAD_RCP(k0)
+#endif
     MFC0(   t0, C0_EPC)
     sw      t0, THREAD_PC(k0)
     lw      t0, THREAD_FP(k0)
@@ -523,11 +557,40 @@ endrcp:
     MFC0(   t0, C0_CAUSE)
     sw      t0, THREAD_CAUSE(k0)
 
+#if BUILD_VERSION == VERSION_E
+    lw      t1, PHYS_TO_K1(MI_INTR_MASK_REG)
+    sw      t1, THREAD_RCP(k0)
+#endif
+
 .set noreorder
     li      t1, OS_STATE_RUNNABLE
     sh      t1, THREAD_STATE(k0)
 .set reorder
 
+#if BUILD_VERSION == VERSION_E
+    lw      t1, __os_Kdebug_Pkt
+    beqz    t1, no_kdebug
+    la      t2, 0xC0000008
+    sw      zero, (t2)
+    lw      a0, 0xC0000000
+    jal     kdebugserver
+    b       __osDispatchThreadSave
+no_kdebug:
+    lw      t1, __osRdb_Mesg
+    beqz    t1, no_rdb_mesg
+    la      t2, 0xC000000C
+    sw      zero, (t2)
+    lw      t1, __osRdbSendMessage
+    beqz    t1, boby
+    li      a0, 0x78
+    jal     send_mesg
+boby:
+    lw      t1, __osRdbWriteOK
+    addi    t1, t1, 1
+    sw      t1, __osRdbWriteOK
+    b       __osDispatchThreadSave
+no_rdb_mesg:
+#else
 #ifndef _FINALROM
     lw      a0, __os_Kdebug_Pkt
     beqz    a0, no_kdebug
@@ -541,6 +604,7 @@ no_kdebug:
     jal     send_mesg
     lw      t0, 0x120(k0)
 no_rdb_mesg:
+#endif
 #endif
 
     andi    t1, t0, CAUSE_EXCMASK
@@ -575,6 +639,7 @@ next_interrupt:
     lw      t2, __osIntTable(t2)
     jr      t2
 
+#if BUILD_VERSION != VERSION_E
 /**
  *  IP6 Interrupt
  *  Only signalled by development hardware
@@ -592,6 +657,7 @@ IP7_Hdlr:
     /* Mask out interrupt and continue */
     and     s0, s0, ~CAUSE_IP7
     b       next_interrupt
+#endif
 
 /**
  *  IP8/Counter Interrupt
@@ -639,12 +705,14 @@ cart:
     /* Continue */
     b       next_interrupt
 #else
+#if BUILD_VERSION != VERSION_E
     li      a0, MESG(OS_EVENT_CART)
     /* Mask out interrupt */
     and     s0, s0, ~CAUSE_IP4
     la      sp, leoDiskStack
     addiu   sp, 0x1000 - 0x10 # Stack size minus initial frame
     /* Load cart callback set by __osSetHWIntrRoutine */
+#endif
     li      t2, HWINTR_SIZE
     lw      t2, __osHwIntTable(t2)
 
@@ -653,15 +721,23 @@ cart:
 
     /* Set up a stack and run the callback */
     jalr    t2
+#if BUILD_VERSION != VERSION_E
     li      a0, MESG(OS_EVENT_CART)
 
     beqz    v0, 1f
     /* Redispatch immediately if the callback returned nonzero */
     b       redispatch
-
+#endif
 1:
     /* Post a cart event message */
+    
+#if BUILD_VERSION == VERSION_E
+    li      a0, MESG(OS_EVENT_CART)
+#endif
     jal     send_mesg
+#if BUILD_VERSION == VERSION_E
+    and     s0, s0, ~CAUSE_IP4
+#endif
     /* Continue */
     b       next_interrupt
 #endif
@@ -679,6 +755,7 @@ rcp:
      *  after this, the interrupt will not be cleared properly.
      */
     lw      s1, PHYS_TO_K1(MI_INTR_REG)
+#if BUILD_VERSION != VERSION_E
     la      t0, __OSGlobalIntMask
     lw      t0, (t0)
 
@@ -689,6 +766,9 @@ rcp:
  *  Signal Processor (SP) Interrupt
  */
     /* Test for sp interrupt */
+#else
+    and     s1, s1, 0x3f
+#endif
     andi    t1, s1, MI_INTR_SP
     beqz    t1, vi
 
@@ -697,7 +777,11 @@ rcp:
     /* Mask out SP interrupt */
     andi    s1, s1, (MI_INTR_SI | MI_INTR_AI | MI_INTR_VI | MI_INTR_PI | MI_INTR_DP)
     lw      ta0, PHYS_TO_K1(SP_STATUS_REG)
+#if BUILD_VERSION == VERSION_E
+    li      t1, (SP_CLR_INTR)
+#else
     li      t1, (SP_CLR_INTR | SP_CLR_SIG3)
+#endif
 
     /* Clear interrupt and signal 3 */
     sw      t1, PHYS_TO_K1(SP_STATUS_REG)
@@ -951,6 +1035,10 @@ enqueueRunning:
  *  Unhandled exceptions & interrupts end up here,
  *  trap to software by posting a fault message
  */
+#if BUILD_VERSION == VERSION_E
+IP6_Hdlr:
+IP7_Hdlr:
+#endif
 panic:
     /* Mark the thread as having faulted */
     sw      k0, __osFaultedThread
@@ -1093,6 +1181,7 @@ LEAF(__osEnqueueAndYield)
     sdc1    $f28, THREAD_FP28(a1)
     sdc1    $f30, THREAD_FP30(a1)
 1:
+#if BUILD_VERSION != VERSION_E
     lw      k1, THREAD_SR(a1)
     andi    t1, k1, SR_IMASK
     beqz    t1, 2f
@@ -1126,11 +1215,15 @@ LEAF(__osEnqueueAndYield)
     lw      t0, THREAD_RCP(a1)
     and     k0, k0, t0
     or      k1, k1, k0
+#endif
 3:
     /*
      * If the specified thread queue is null, skip
      *  straight to dispatching
      */
+#if BUILD_VERSION == VERSION_E
+    lw      k1, PHYS_TO_K1(MI_INTR_MASK_REG)
+#endif
     sw      k1, THREAD_RCP(a1)
     beqz    a0, noEnqueue
     jal     __osEnqueueThread
@@ -1223,8 +1316,8 @@ LEAF(__osDispatchThread)
 #if BUILD_VERSION < VERSION_K
 1:
 #endif
-
 __osDispatchThreadSave:
+#if BUILD_VERSION != VERSION_E
     lw      k1, THREAD_SR(k0)
     la      t0, __OSGlobalIntMask
     lw      t0, 0(t0)
@@ -1234,6 +1327,7 @@ __osDispatchThreadSave:
     and     k1, k1, ~SR_IMASK
     or      k1, k1, t1
     MTC0(   k1, C0_SR)
+#endif
 /* Restore GPRs */
 .set noat
     ld      $1, THREAD_GP1(k0)
@@ -1274,6 +1368,11 @@ __osDispatchThreadSave:
     lw      k1, THREAD_PC(k0)
     MTC0(   k1, C0_EPC)
 
+#if BUILD_VERSION == VERSION_E
+    lw      k1, THREAD_SR(k0)
+    MTC0(   k1, C0_SR)
+#endif
+
     /* Check if the FPU was used by this thread and if so also restore the FPU registers */
     lw      k1, THREAD_FP(k0)
     beqz    k1, 1f
@@ -1304,10 +1403,12 @@ __osDispatchThreadSave:
      */
 .set noreorder
     lw      k1, THREAD_RCP(k0)
+#if BUILD_VERSION != VERSION_E
     la      k0, __OSGlobalIntMask
     lw      k0, 0(k0)
     srl     k0, k0, 0x10
     and     k1, k1, k0
+#endif
     sll     k1, k1, 0x1
     la      k0, __osRcpImTable
     addu    k1, k1, k0

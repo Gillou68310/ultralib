@@ -13,5 +13,9 @@ ABS(osVersion, 0x80000314)
 ABS(osMemSize, 0x80000318)
 ABS(osAppNMIBuffer, 0x8000031c)
 
+#if BUILD_VERSION == VERSION_E
+.space 0x40
+#else
 .space 0x60
+#endif
 /* padded to 0x60 in the object file */

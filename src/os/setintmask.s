@@ -37,6 +37,11 @@
  *       OS_IM_ALL, so the operation is usually simply (SR | 0).
  */
 LEAF(osSetIntMask)
+#if BUILD_VERSION == VERSION_E
+    mfc0    t1, C0_SR
+    andi    v0, t1, OS_IM_CPU
+    lw      t2, PHYS_TO_K1(MI_INTR_MASK_REG)
+#else
     /* Extract interrupt enable bits from current SR */
     mfc0    ta0, C0_SR
 
@@ -61,6 +66,7 @@ LEAF(osSetIntMask)
     xor     t1, t1, ~0
     andi    t1, t1, (RCP_IMASK >> RCP_IMASKSHIFT)
     or      t2, t2, t1
+#endif
 1:
     /* Shift the RCP bits to not conflict with the CPU bits */
     sll     t2, t2, RCP_IMASKSHIFT
@@ -69,7 +75,9 @@ LEAF(osSetIntMask)
 
     /* Extract RCP interrupt enable bits from requested mask and mask with __OSGlobalIntMask */
     and     t0, a0, RCP_IMASK
+#if BUILD_VERSION != VERSION_E
     and     t0, t0, t3
+#endif
     /* Convert to a value for MI_INTR_MASK_REG and set it */
     srl     t0, t0, (RCP_IMASKSHIFT - 1)
     lhu     t2, __osRcpImTable(t0)
@@ -77,14 +85,24 @@ LEAF(osSetIntMask)
 
     /* Extract CPU interrupt enable bits from requested mask and mask with __OSGlobalIntMask */
     andi    t0, a0, OS_IM_CPU
+#if BUILD_VERSION != VERSION_E
     andi    t1, t3, SR_IMASK
     and     t0, t0, t1
+#endif
 
+#if BUILD_VERSION != VERSION_E
     and     ta0, ta0, ~SR_IMASK
     /* Bitwise OR in the remaining bits of SR and set new SR */
     or      ta0, ta0, t0
 
     mtc0    ta0, C0_SR
+#else
+    and     t1, t1, ~SR_IMASK
+    /* Bitwise OR in the remaining bits of SR and set new SR */
+    or      t1, t1, t0
+
+    mtc0    t1, C0_SR
+#endif
     nop
     nop
     jr      ra

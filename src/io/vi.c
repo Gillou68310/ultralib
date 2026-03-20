@@ -10,13 +10,29 @@
 static __OSViContext vi[2] ALIGNED(0x8) = { 0 };
 __OSViContext* __osViCurr = &vi[0];
 __OSViContext* __osViNext = &vi[1];
+#if BUILD_VERSION == VERSION_E
+s32 D_80007048_bootseg = OS_TV_TYPE_NTSC;
+s32 osViClock = 0x02E6D354;
+#endif
 
 void __osViInit(void) {
+#if BUILD_VERSION == VERSION_E
+    D_80007048_bootseg = osTvType;
+#endif
     bzero(vi, sizeof(vi));
     __osViCurr = &vi[0];
     __osViNext = &vi[1];
     __osViNext->retraceCount = 1;
     __osViCurr->retraceCount = 1;
+#if BUILD_VERSION == VERSION_E
+    if (D_80007048_bootseg == OS_TV_TYPE_NTSC) {
+        __osViNext->modep = &osViModeNtscLan1;
+        osViClock = 0x02E6D354;
+    } else {
+        __osViNext->modep = &osViModeMpalLan1;
+        osViClock = 0x02E6025C;
+    }
+#else
     __osViNext->framep = (void*)K0BASE;
     __osViCurr->framep = (void*)K0BASE;
 
@@ -27,6 +43,7 @@ void __osViInit(void) {
     } else {
         __osViNext->modep = &osViModeNtscLan1;
     }
+#endif
 
     __osViNext->state = VI_STATE_BLACK;
     __osViNext->control = __osViNext->modep->comRegs.ctrl;

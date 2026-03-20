@@ -43,7 +43,9 @@ s32 osEPiStartDma(OSPiHandle* pihandle, OSIoMesg* mb, s32 direction) {
     }
 #endif
 
+#if BUILD_VERSION != VERSION_E
     mb->piHandle = pihandle;
+#endif
 
     if (direction == OS_READ) {
         mb->hdr.type = OS_MESG_TYPE_EDMAREAD;

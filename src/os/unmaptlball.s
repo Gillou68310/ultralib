@@ -6,7 +6,11 @@
 .set noreorder
 LEAF(osUnmapTLBAll)
     mfc0    t0, C0_ENTRYHI
+#if BUILD_VERSION == VERSION_E
+    li      t1, NTLBENTRIES
+#else
     li      t1, NTLBENTRIES-1 /* last reserved for rdb */
+#endif
     li      t2, (K0BASE & TLBHI_VPN2MASK)
     mtc0    t2, C0_ENTRYHI
     mtc0    zero, C0_ENTRYLO0
@@ -18,7 +22,11 @@ LEAF(osUnmapTLBAll)
     nop
     nop
     addi    t1, t1, -1
+#if BUILD_VERSION == VERSION_E
+    bnezl    t1, 1b
+#else
     bgez    t1, 1b
+#endif
      nop
     mtc0    t0, C0_ENTRYHI
     jr      ra

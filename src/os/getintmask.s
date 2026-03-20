@@ -9,6 +9,7 @@
 LEAF(osGetIntMask)
     mfc0    v0, C0_SR
     andi    v0, v0, OS_IM_CPU
+#if BUILD_VERSION > VERSION_E
     la      t0, __OSGlobalIntMask
     lw      t1, 0(t0)
     xor     t0, t1, -1
@@ -26,6 +27,10 @@ LEAF(osGetIntMask)
     or      t1, t1, t0
 1:
     sll     t2, t1, 0x10
+#else
+    lw      t2, PHYS_TO_K1(MI_INTR_MASK_REG)
+    sll     t2, t2, 0x10
+#endif
     or      v0, v0, t2
     jr      ra
      nop

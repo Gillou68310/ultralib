@@ -8,7 +8,7 @@ u8 __osContLastCmd;
 u8 __osMaxControllers;
 
 OSTimer __osEepromTimer;
-OSMesgQueue __osEepromTimerQ ALIGNED(0x8);
+OSMesgQueue __osEepromTimerQ;// ALIGNED(0x8);
 OSMesg __osEepromTimerMsg;
 
 s32 __osContinitialized = FALSE;
@@ -27,15 +27,27 @@ s32 osContInit(OSMesgQueue* mq, u8* bitpattern, OSContStatus* data) {
     __osContinitialized = TRUE;
 
     t = osGetTime();
+#if BUILD_VERSION == VERSION_E
+    if (t < (500000*osClockRate)/1000000) {
+#else
     if (t < OS_USEC_TO_CYCLES(500000)) {
+#endif
         osCreateMesgQueue(&timerMesgQueue, &dummy, 1);
+#if BUILD_VERSION == VERSION_E
+        osSetTimer(&mytimer, (500000*osClockRate)/1000000 - t, 0, &timerMesgQueue, &dummy);
+#else
         osSetTimer(&mytimer, OS_USEC_TO_CYCLES(500000) - t, 0, &timerMesgQueue, &dummy);
+#endif
         osRecvMesg(&timerMesgQueue, &dummy, OS_MESG_BLOCK);
     }
 
     __osMaxControllers = 4;
 
+#if BUILD_VERSION == VERSION_E
+    __osPackRequestData(CONT_CMD_RESET);
+#else
     __osPackRequestData(CONT_CMD_REQUEST_STATUS);
+#endif
 
     ret = __osSiRawStartDma(OS_WRITE, __osContPifRam.ramarray);
     osRecvMesg(mq, &dummy, OS_MESG_BLOCK);
@@ -44,7 +56,11 @@ s32 osContInit(OSMesgQueue* mq, u8* bitpattern, OSContStatus* data) {
     osRecvMesg(mq, &dummy, OS_MESG_BLOCK);
 
     __osContGetInitData(bitpattern, data);
+#if BUILD_VERSION == VERSION_E
+    __osContLastCmd = CONT_CMD_RESET;
+#else
     __osContLastCmd = CONT_CMD_REQUEST_STATUS;
+#endif
     __osSiCreateAccessQueue();
     osCreateMesgQueue(&__osEepromTimerQ, &__osEepromTimerMsg, 1);
 
@@ -78,7 +94,11 @@ void __osPackRequestData(u8 cmd) {
     __OSContRequesFormat requestHeader;
     s32 i;
 
+#if BUILD_VERSION == VERSION_E    
+    for (i = 0; i <= ARRLEN(__osContPifRam.ramarray); i++) {
+#else
     for (i = 0; i < ARRLEN(__osContPifRam.ramarray); i++) {
+#endif
         __osContPifRam.ramarray[i] = 0;
     }
 

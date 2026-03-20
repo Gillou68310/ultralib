@@ -102,6 +102,12 @@ s32 __osContRamWrite(OSMesgQueue* mq, int channel, u16 address, u8* buffer, int 
     osRecvMesg(mq, NULL, OS_MESG_BLOCK);
 
     do {
+#if BUILD_VERSION == VERSION_E
+        for (i = 0; i < 16; i++) {
+            __osPfsPifRam.ramarray[i] = 0xFF;
+        }
+        __osPfsPifRam.pifstatus = 0;
+#endif
         ret = __osSiRawStartDma(OS_READ, &__osPfsPifRam);
         osRecvMesg(mq, NULL, OS_MESG_BLOCK);
         ptr = (u8*)&__osPfsPifRam;
@@ -126,9 +132,12 @@ s32 __osContRamWrite(OSMesgQueue* mq, int channel, u16 address, u8* buffer, int 
                 
                 ret = PFS_ERR_CONTRFAIL;
             }
-        } else {
+        }
+#if BUILD_VERSION > VERSION_E
+        else {
             ret = PFS_ERR_NOPACK;
         }
+#endif
     } while ((ret == PFS_ERR_CONTRFAIL) && retry-- >= 0);
 
     __osSiRelAccess();
@@ -142,6 +151,11 @@ static void __osPackRamWriteData(int channel, u16 address, u8 *buffer) {
     int i;
 
     ptr = (u8 *)__osPfsPifRam.ramarray;
+#if BUILD_VERSION == VERSION_E
+    for (i = 0; i < 16; i++) {
+        __osPfsPifRam.ramarray[i] = 0;
+    }
+#endif
     __osPfsPifRam.pifstatus = CONT_CMD_EXE;
     ramreadformat.dummy = CONT_CMD_NOP;
     ramreadformat.txsize = CONT_CMD_WRITE_PAK_TX;
@@ -155,7 +169,8 @@ static void __osPackRamWriteData(int channel, u16 address, u8 *buffer) {
     }
     
     if (channel != 0) {
-        for (i = 0; i < channel; i++) { *ptr++ = CONT_CMD_REQUEST_STATUS; }
+        for (i = 0; i < channel; i++)
+        { *ptr++ = CONT_CMD_REQUEST_STATUS; }
     }
     
     *(__OSContRamReadFormat *)ptr = ramreadformat;

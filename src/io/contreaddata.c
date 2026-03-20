@@ -7,6 +7,9 @@ static void __osPackReadData(void);
 
 s32 osContStartReadData(OSMesgQueue* mq) {
     s32 ret = 0;
+#if BUILD_VERSION == VERSION_E
+    int i;
+#endif
 
     __osSiGetAccess();
 
@@ -15,7 +18,12 @@ s32 osContStartReadData(OSMesgQueue* mq) {
         ret = __osSiRawStartDma(OS_WRITE, __osContPifRam.ramarray);
         osRecvMesg(mq, NULL, OS_MESG_BLOCK);
     }
-
+#if BUILD_VERSION == VERSION_E
+    for (i = 0; i < 16; i++) {
+        __osContPifRam.ramarray[i] = 0xFF;
+    }
+    __osContPifRam.pifstatus = 0;
+#endif
     ret = __osSiRawStartDma(OS_READ, __osContPifRam.ramarray);
     __osContLastCmd = CONT_CMD_READ_BUTTON;
     __osSiRelAccess();
@@ -47,7 +55,11 @@ static void __osPackReadData(void) {
     __OSContReadFormat readformat;
     int i;
 
+#if BUILD_VERSION == VERSION_E
+    for (i = 0; i <= ARRLEN(__osContPifRam.ramarray); i++) {
+#else
     for (i = 0; i < ARRLEN(__osContPifRam.ramarray); i++) {
+#endif
         __osContPifRam.ramarray[i] = 0;
     }
 

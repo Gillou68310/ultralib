@@ -10,7 +10,9 @@ s32 osEepromWrite(OSMesgQueue* mq, u8 address, u8* buffer) {
 #if BUILD_VERSION < VERSION_J
     int i;
 #endif
+#if BUILD_VERSION > VERSION_E
     u16 type;
+#endif
     u8* ptr = (u8*)&__osEepPifRam.ramarray;
     __OSContEepromFormat eepromformat;
     OSContStatus sdata;
@@ -18,8 +20,20 @@ s32 osEepromWrite(OSMesgQueue* mq, u8 address, u8* buffer) {
     u8 temp[8];
 #endif
 
+#if BUILD_VERSION == VERSION_E
+    if (address >= 0x41) {
+        return -1;
+    }
+#endif
+
     __osSiGetAccess();
     ret = __osEepStatus(mq, &sdata);
+
+#if BUILD_VERSION == VERSION_E
+    if ((ret != 0) || (sdata.type != (CONT_EEPROM))) {
+        return 8;
+    }
+#else
 #if BUILD_VERSION < VERSION_J
     ret = __osEepStatus(mq, &sdata); // Duplicate that was removed in 2.0J
 #endif
@@ -83,6 +97,7 @@ s32 osEepromWrite(OSMesgQueue* mq, u8 address, u8* buffer) {
         }
     }
 #endif
+#endif
 
     while (sdata.status & CONT_EEPROM_BUSY) {
         __osEepStatus(mq, &sdata);
@@ -91,6 +106,12 @@ s32 osEepromWrite(OSMesgQueue* mq, u8 address, u8* buffer) {
     __osPackEepWriteData(address, buffer);
     ret = __osSiRawStartDma(OS_WRITE, &__osEepPifRam); // send command to pif
     osRecvMesg(mq, NULL, OS_MESG_BLOCK);
+#if BUILD_VERSION == VERSION_E
+    for (i = 0; i < 16; i++) {
+        __osEepPifRam.ramarray[i] = 0xFF;
+    }
+    __osEepPifRam.pifstatus = 0;
+#endif
     ret = __osSiRawStartDma(OS_READ, &__osEepPifRam); // recv response
     __osContLastCmd = CONT_CMD_WRITE_EEPROM;
     osRecvMesg(mq, NULL, OS_MESG_BLOCK);
@@ -118,7 +139,11 @@ static void __osPackEepWriteData(u8 address, u8* buffer) {
     int i;
 
 #if BUILD_VERSION < VERSION_J
+#if BUILD_VERSION == VERSION_E
+    for (i = 0; i <= ARRLEN(__osEepPifRam.ramarray); i++) {
+#else
     for (i = 0; i < ARRLEN(__osEepPifRam.ramarray); i++) {
+#endif
         __osEepPifRam.ramarray[i] = CONT_CMD_NOP;
     }
 #endif
@@ -175,6 +200,8 @@ s32 __osEepStatus(OSMesgQueue* mq, OSContStatus* data) {
     osRecvMesg(mq, NULL, OS_MESG_BLOCK);
 #if BUILD_VERSION >= VERSION_J
     __osContLastCmd = CONT_CMD_END;
+#elif BUILD_VERSION == VERSION_E
+    __osContLastCmd = CONT_CMD_WRITE_EEPROM;
 #else
     __osContLastCmd = CONT_CMD_REQUEST_STATUS;
 #endif

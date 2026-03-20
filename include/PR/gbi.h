@@ -146,6 +146,12 @@
 #define G_SETGEOMETRYMODE	(G_IMMFIRST-8)
 #define G_CLEARGEOMETRYMODE	(G_IMMFIRST-9)
 #define G_LINE3D		(G_IMMFIRST-10)
+#if BUILD_VERSION == VERSION_E
+#define G_PERSPNORMALIZE	(G_IMMFIRST-11)
+#define G_RDPHALF_1		(G_IMMFIRST-12)
+#define G_RDPHALF_2		(G_IMMFIRST-13)
+#define G_RDPHALF_CONT		(G_IMMFIRST-14)
+#else
 #define G_RDPHALF_1		(G_IMMFIRST-11)
 #define G_RDPHALF_2		(G_IMMFIRST-12)
 #if (defined(F3DEX_GBI)||defined(F3DLP_GBI))
@@ -155,6 +161,7 @@
 #  define G_LOAD_UCODE		(G_IMMFIRST-16)
 #else
 #  define G_RDPHALF_CONT	(G_IMMFIRST-13)
+#endif
 #endif
 
 /* We are overloading 2 of the immediate commands
@@ -2791,8 +2798,13 @@ typedef union {
 }}
 #endif
 
+#if BUILD_VERSION == VERSION_E
+#define	gSPPerspNormalize(pkt, s)	gImmp1(pkt, G_PERSPNORMALIZE, s)
+#define	gsSPPerspNormalize(s)		gsImmp1(G_PERSPNORMALIZE, s)
+#else
 #define gSPPerspNormalize(pkt, s)	gMoveWd(pkt, G_MW_PERSPNORM, 0, (s))
 #define gsSPPerspNormalize(s)		gsMoveWd(    G_MW_PERSPNORM, 0, (s))
+#endif
 
 #ifdef	F3DEX_GBI_2
 # define gSPPopMatrixN(pkt, n, num)	gDma2p((pkt),G_POPMTX,(num)*64,64,2,0)
@@ -4495,6 +4507,22 @@ typedef union {
 }
 
 /* like gSPTextureRectangle but accepts negative position arguments */
+#if BUILD_VERSION == VERSION_E
+#define gSPScisTextureRectangle(pkt, xl, yl, xh, yh, tile, s, t, dsdx, dtdy)  \
+{									\
+    Gfx *_g = (Gfx *)(pkt);						\
+									\
+    _g->words.w0 = (_SHIFTL(G_TEXRECT, 24, 8) | 			\
+		    _SHIFTL(MAX(xh,0), 12, 12) | _SHIFTL(MAX(yh,0), 0, 12)); \
+    _g->words.w1 = (_SHIFTL(tile, 24, 3) |				     \
+		    _SHIFTL(MAX(xl,0), 12, 12) | _SHIFTL(MAX(yl,0), 0, 12)); \
+    gImmp1(pkt, G_RDPHALF_1, 						     \
+		(_SHIFTL(((s) - (MIN(((xl*dsdx)>>7),0))), 16, 16) |	     \
+		_SHIFTL(((t) - (MIN(((yl*dtdy)>>7),0))), 0, 16)));	     \
+    gImmp1(pkt, G_RDPHALF_2, 						     \
+		(_SHIFTL(dsdx, 16, 16) |	_SHIFTL(dtdy, 0, 16)));	     \
+}
+#else
 #define gSPScisTextureRectangle(pkt, xl, yl, xh, yh, tile, s, t, dsdx, dtdy) \
 {                                                                            \
     Gfx *_g = (Gfx *)(pkt);                                                  \
@@ -4521,6 +4549,7 @@ typedef union {
     gImmp1(pkt, G_RDPHALF_2, (_SHIFTL((dsdx), 16, 16) |                      \
                               _SHIFTL((dtdy), 0, 16)));                      \
 }
+#endif
 
 #define gsSPTextureRectangleFlip(xl, yl, xh, yh, tile, s, t, dsdx, dtdy) \
     {{(_SHIFTL(G_TEXRECTFLIP, 24, 8) | _SHIFTL(xh, 12, 12) |		\
