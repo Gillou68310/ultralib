@@ -57,6 +57,8 @@ static s16 eqpower[ EQPOWER_LENGTH ] = {
     405,      0
 };
 
+#define assert(a) if (!(a)) osSyncPrintf("\n--- ASSERTION FAULT - %s - %s, line %d\n\n",# a, __FILE__, __LINE__);
+
 extern	f64	__pow(f64, f64);
 
 /*
@@ -64,7 +66,7 @@ extern	f64	__pow(f64, f64);
  */
 static  Acmd *_pullSubFrame(void *filter, s16 *inp, s16 *outp, s32 outCount,
                             s32 sampleOffset, Acmd *p) ;
-static  s16 _getRate(f64 vol, f64 tgt, s32 count, u16* ratel);
+static s16 _getRate(f32 vol, f32 tgt, s32 count, u16* ratel);
 
 static  f32 _getVol(f32 ivol, s32 samples, s16 ratem, u16 ratel);
 
@@ -100,7 +102,7 @@ Acmd *alEnvmixerPull(void *filter, s16 *outp, s32 outCount, s32 sampleOffset,
         if (samples > outCount)
             break;
 #if BUILD_VERSION < VERSION_J
-#line 103
+#line 103 "env.c"
 #endif
         assert(samples >= 0);
         assert(samples <= AL_MAX_RSP_SAMPLES);
@@ -165,6 +167,7 @@ Acmd *alEnvmixerPull(void *filter, s16 *outp, s32 outCount, s32 sampleOffset,
           case (AL_FILTER_SET_VOLUME):
 	      ptr = _pullSubFrame(e, &inp, &loutp, samples, sampleOffset, ptr);
             
+              e->delta += samples;
               if (e->delta >= e->segEnd){
                   /*
                    * We should have reached our target, calculate
@@ -274,6 +277,7 @@ Acmd *alEnvmixerPull(void *filter, s16 *outp, s32 outCount, s32 sampleOffset,
                * on down the chain
                */
 	      ptr = _pullSubFrame(e, &inp, &loutp, samples, sampleOffset, ptr);
+		  e->delta += samples;
               (*e->filter.setParam)(&e->filter, e->ctrlList->type,
                                     (void *) e->ctrlList->data.i);
               break;
@@ -293,8 +297,11 @@ Acmd *alEnvmixerPull(void *filter, s16 *outp, s32 outCount, s32 sampleOffset,
         
     }
     
-    ptr = _pullSubFrame(e, &inp, &loutp, outCount, sampleOffset, ptr);
-
+    if (e->motion == 1)
+    {
+        ptr = _pullSubFrame(e, &inp, &loutp, outCount, sampleOffset, ptr);
+        e->delta += outCount;
+    }
     /*
      * Prevent overflow in e->delta
      */
@@ -305,6 +312,92 @@ Acmd *alEnvmixerPull(void *filter, s16 *outp, s32 outCount, s32 sampleOffset,
     PROFILE_AUD(env_num, env_cnt, env_max, env_min);
 #endif
     return ptr;
+}
+
+static Acmd* _pullSubFrame(void *filter, s16 *inp, s16 *outp, s32 outCount, s32 sampleOffset, Acmd *p)
+{
+    Acmd        *ptr = p;
+    ALEnvMixer	*e = (ALEnvMixer *)filter;
+    ALFilter    *source= e->filter.source;
+
+    if (!outCount)
+        return ptr;
+
+#line 373 "env.c"
+    assert(source);
+
+    ptr = (*source->handler)(source, inp, outCount, sampleOffset, p);
+
+    aSetBuffer(ptr++, A_MAIN, *inp, AL_MAIN_L_OUT + *outp, outCount<<1);
+    aSetBuffer(ptr++, A_AUX, AL_MAIN_R_OUT + *outp, AL_AUX_L_OUT + *outp, AL_AUX_R_OUT + *outp);
+
+    if (e->first)
+    {
+	    e->first = 0;
+
+        e->ltgt = (e->volume * eqpower[e->pan]) >> 15;
+        e->lratm = _getRate(e->cvolL, e->ltgt, e->segEnd, &(e->lratl));
+        e->rtgt = (e->volume * eqpower[EQPOWER_LENGTH - e->pan - 1]) >> 15;
+        e->rratm = _getRate(e->cvolR, e->rtgt, e->segEnd, &(e->rratl));
+
+        aSetVolume(ptr++, A_LEFT | A_VOL, e->cvolL, 0, 0);
+        aSetVolume(ptr++, A_RIGHT | A_VOL, e->cvolR, 0, 0);
+        aSetVolume(ptr++, A_LEFT  | A_RATE, e->ltgt, e->lratm, e->lratl);
+        aSetVolume(ptr++, A_RIGHT | A_RATE, e->rtgt, e->rratm, e->rratl);
+        aSetVolume(ptr++, A_AUX, e->dryamt, 0, e->wetamt);
+        aEnvMixer (ptr++, A_INIT | A_AUX, osVirtualToPhysical(e->state));
+    }
+    else
+    {
+	    aEnvMixer(ptr++, A_CONTINUE | A_AUX, osVirtualToPhysical(e->state));
+    }
+
+    *inp += (outCount<<1);
+
+    return ptr;
+}
+
+static s16 _getRate(f32 vol, f32 tgt, s32 count, u16* ratel)
+{
+    f32 tempf2;
+    s16 s;
+
+#ifdef AUD_PROFILE
+    lastCnt[++cnt_index] = osGetCount();
+#endif
+
+    if (count == 0)
+    {
+        if (tgt >= vol)
+        {
+            *ratel = 0xffff;
+            return 0x7fff;
+        }
+        else
+        {
+            *ratel = 0;
+            return -0x8000;
+        }
+    }
+
+    tempf2 = ((tgt - vol) / count) * 8.0;
+
+    if (tempf2 < 0.0f)
+    {
+        tempf2 -= 1.0f;
+    }
+    s = (s16) tempf2;
+
+    *ratel = (s16)(0xffff * (tempf2 - (f32) s));
+    return (s16)tempf2;
+}
+
+static f32 _getVol(f32 ivol, s32 samples, s16 ratem, u16 ratel)
+{
+    f32 r;
+    r = ((ratem << 16) + (f32) ratel) / 65536.0;
+    ivol += (r * samples) / 8.0;
+    return ivol;
 }
 
 s32 alEnvmixerParam(void *filter, s32 paramID, void *param)
@@ -348,73 +441,6 @@ s32 alEnvmixerParam(void *filter, s32 paramID, void *param)
     }
     return 0;
 }
-#if BUILD_VERSION < VERSION_J
-#line 350
-#endif
-static Acmd* _pullSubFrame(void *filter, s16 *inp, s16 *outp, s32 outCount,
-                    s32 sampleOffset, Acmd *p) 
-{
-    Acmd        *ptr = p;
-    ALEnvMixer	*e = (ALEnvMixer *)filter;
-    ALFilter      *source= e->filter.source;
-
-    /* filter must be playing and request non-zero output samples to pull. */
-    if (e->motion != AL_PLAYING || !outCount)
-        return ptr;
-
-    /*
-     * ask all filters upstream from us to build their command
-     * lists.
-     */
-
-    assert(source);
-
-    
-    ptr = (*source->handler)(source, inp, outCount, sampleOffset, p);
-
-    /*
-     * construct our portion of the command list
-     */
-    aSetBuffer(ptr++, A_MAIN, *inp, AL_MAIN_L_OUT + *outp, outCount<<1);
-    aSetBuffer(ptr++, A_AUX, AL_MAIN_R_OUT + *outp, AL_AUX_L_OUT + *outp,
-	       AL_AUX_R_OUT + *outp);
-
-    if (e->first){
-	e->first = 0;
-
-        /*
-         * Calculate derived parameters
-         */
-        e->ltgt = (e->volume * eqpower[e->pan]) >> 15;
-        e->lratm = _getRate((f64)e->cvolL, (f64)e->ltgt,
-                            e->segEnd, &(e->lratl));
-        e->rtgt = (e->volume *
-                   eqpower[EQPOWER_LENGTH - e->pan - 1]) >> 15;
-        e->rratm = _getRate((f64)e->cvolR, (f64)e->rtgt, e->segEnd,
-                            &(e->rratl));
-
-        aSetVolume(ptr++, A_LEFT | A_VOL, e->cvolL, 0, 0);
-        aSetVolume(ptr++, A_RIGHT | A_VOL, e->cvolR, 0, 0);
-	aSetVolume(ptr++, A_LEFT  | A_RATE, e->ltgt, e->lratm, e->lratl);
-	aSetVolume(ptr++, A_RIGHT | A_RATE, e->rtgt, e->rratm, e->rratl);
-	aSetVolume(ptr++, A_AUX, e->dryamt, 0, e->wetamt);
-	aEnvMixer (ptr++, A_INIT | A_AUX, osVirtualToPhysical(e->state));
-    }
-    else
-	aEnvMixer(ptr++, A_CONTINUE | A_AUX, osVirtualToPhysical(e->state));
-
-    /*
-     * bump the input buffer pointer
-     */
-
-    *inp += (outCount<<1);
-    e->delta += outCount;
-
-    return ptr;
-}
-
-#define EXP_MASK  0x7f800000
-#define MANT_MASK 0x807fffff
 
 f64
 _frexpf(f64 value, s32 *eptr)
@@ -444,148 +470,4 @@ _ldexpf(f64 in, s32 ex)
 
     return ( in );
 }
-
-/*
-    _getRate()  --  This function determines how to go from the
-		    current volume level (vol) to the target
-		    volume level (tgt) in some number of steps
-		    (count).  Two values are returned that are
-		    used as multipliers to incrementally scale
-		    the volume.  Some tricky math is used and
-		    is explained below.
-		    RWW 28jun95
-*/
-
-static
-s16 _getRate(f64 vol, f64 tgt, s32 count, u16* ratel)
-{
-    s16         s;
-    
-    f64         invn = 1.0/count, eps, a, fs, mant;
-    s32         i_invn, ex, indx;
-
-#ifdef AUD_PROFILE
-    lastCnt[++cnt_index] = osGetCount();
-#endif
-    
-    if (count == 0){
-        if (tgt >= vol){
-            *ratel = 0xffff;
-            return 0x7fff;
-        }
-        else{
-            *ratel = 0;
-            return 0;
-        }
-    }
-
-    if (tgt < 1.0)
-        tgt = 1.0;
-    if (vol <= 0) vol = 1;	/* zero and neg values not allowed */
-
-#define NBITS (3)
-#define NPOS  (1<<NBITS)
-#define NFRACBITS (30)
-#define M_LN2		0.69314718055994530942
-    /*
-     * rww's parametric pow()
-     Goal: compute a = (tgt/vol)^(1/count)
-
-     Approach:
-     (tgt/vol)^(1/count) =
-     ((tgt/vol)^(1/2^30))^(2^30*1/count)
-
-     (tgt/vol)^(1/2^30) ~= 1 + eps
-
-     where
-
-     eps ~= ln(tgt/vol)/2^30
-
-     ln(tgt/vol) = ln2(tgt/vol) * ln(2)
-
-     ln2(tgt/vol) = fp_exponent( tgt/vol ) +
-     ln2( fp_mantissa( tgt/vol ) )
-		
-     fp_mantissa() and fp_exponent() are
-     calculated via tricky bit manipulations of
-     the floating point number. ln2() is
-     approximated by a look up table.
-
-     Note that this final (1+eps) value needs
-     to be raised to the 2^30/count power. This
-     is done by operating on the binary representaion
-     of this number in the final while loop.
-	
-     Enjoy!
-     */
-    {
-	f64 logtab[] = { -0.912537, -0.752072, -0.607683, -0.476438,
-                         -0.356144, -0.245112, -0.142019, -0.045804  };
-
-	i_invn = (s32) _ldexpf( invn, NFRACBITS );
-	mant = _frexpf( tgt/vol, &ex );
-	indx = (s32) (_ldexpf( mant, NBITS+1 ) ); /* NPOS <= indx < 2*NPOS */
-	eps = (logtab[indx - NPOS] + ex) * M_LN2;
-	eps /= _ldexpf( 1, NFRACBITS ); /* eps / 2^NFRACBITS */
-	fs = (1.0 + eps);
-	a = 1.0;
-	while( i_invn ) {
-	    if( i_invn & 1 )
-		a = a * fs;
-	    fs *= fs;
-	    i_invn >>= 1;
-	}
-    }
-
-    a *= (a *= (a *= a));
-    s = (s16) a;
-    *ratel = (s16)(0xffff * (a - (f32) s));
-
-#ifdef AUD_PROFILE
-    PROFILE_AUD(rate_num, rate_cnt, rate_max, rate_min);
-#endif
-    return (s16)a;
-
-}
-
-static
-f32 _getVol(f32 ivol, s32 samples, s16 ratem, u16 ratel)
-{
-    f32	        r, a;
-    s32	      	i;
-
-#ifdef AUD_PROFILE
-    lastCnt[++cnt_index] = osGetCount();
-#endif
-    
-    /*
-     * Rate values are actually rate^8
-     */
-    samples >>=3;
-    if (samples == 0){
-        return ivol;
-    }
-    r = ((f32) (ratem<<16) + (f32) ratel)/65536;
-    
-    a = 1.0;
-    for (i=0; i<32; i++){
-	if( samples & 1 )
-	    a *= r;
-        samples >>= 1;
-        if (samples == 0)
-            break;
-	r *= r;
-    }
-    ivol *= a;
-#ifdef AUD_PROFILE
-    PROFILE_AUD(vol_num, vol_cnt, vol_max, vol_min);
-#endif
-    return ivol;
-}
-
-
-
-
-
-
 

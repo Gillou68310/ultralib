@@ -7,9 +7,6 @@ s32 osPfsInit(OSMesgQueue* queue, OSPfs* pfs, int channel) {
 
     __osSiGetAccess();
     ret = __osPfsGetStatus(queue, channel);
-#if BUILD_VERSION == VERSION_E
-    __osContLastCmd = CONT_CMD_RESET;
-#endif
     __osSiRelAccess();
 
     if (ret != 0) {
@@ -37,7 +34,7 @@ s32 __osPfsGetStatus(OSMesgQueue* queue, int channel) {
     OSContStatus contData[MAXCONTROLLERS];
 
     ret = 0;
-    __osPfsRequestData(0xFF);
+    __osPfsRequestData(0);
     ret = __osSiRawStartDma(OS_WRITE, &__osPfsPifRam);
     osRecvMesg(queue, &dummy, OS_MESG_BLOCK);
     ret = __osSiRawStartDma(OS_READ, &__osPfsPifRam);

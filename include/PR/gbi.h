@@ -3280,7 +3280,7 @@ typedef union {
 		(((1 << G_TX_DXT_FRAC) + TXL2WORDS(width, b_txl) - 1) / \
 					TXL2WORDS(width, b_txl))
 
-#define TXL2WORDS_4b(txls)	MAX(1, ((txls)/16))
+#define TXL2WORDS_4b(txls)	((txls)/16)
 #define CALC_DXT_4b(width)	\
 		(((1 << G_TX_DXT_FRAC) + TXL2WORDS_4b(width) - 1) / \
 					TXL2WORDS_4b(width))

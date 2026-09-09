@@ -56,8 +56,13 @@ int _Printf(void* pfn(void*,const char*,size_t), void *arg, const char *fmt, va_
         char ac[32];
         s = fmt;
 
-        for (c = *s; c != 0 && c != '%';) {
-            c = *++s;
+        for (; (c = *s++) > 0;)
+        {
+            if (c == '%')
+            {
+                s--;
+                break;
+            }
         }
         
         PUT(fmt, s - fmt);
